@@ -1,9 +1,10 @@
 import express from "express";
-import { UserModel } from "./db.js";
+import { ContentModel, UserModel } from "./db.js";
 import jwt from 'jsonwebtoken';
 import { z } from "zod";
 import bcrypt from "bcrypt";
 import dotenv from "dotenv";
+import { userMiddleware } from "./middleware.js";
 
 dotenv.config();
 const JWT_SECRET = process.env.JWT_SECRET as string;
@@ -47,7 +48,7 @@ app.post("/api/v1/signup", async(req, res) => {
     }
     catch(e) {
         res.status(411).json({
-            message: "User already exists"
+            message: "Error signing up"
         })
     }
 })
@@ -105,27 +106,81 @@ app.post("/api/v1/signin", async (req, res) => {
     
 })
 
-//route to post content on second brain
-app.post("/api/v1/content", (req, res) => {
+//route to post content on second brain (authenticated)
+app.post("/api/v1/content", userMiddleware, async (req, res) => {
+    try{
+        const title = req.body.title;
+        const link = req.body.link;
+        //const tags = req.body.tags;
+        //@ts-ignore
+        const userId = req.userId;
+
+        await ContentModel.create({
+            title,
+            link, 
+            tags: [],
+            userId
+        })
+
+        res.json({
+            message: "Content added"
+        })
+    }
+    catch(e) {
+        res.json({
+            message: "Error"
+        })
+    }
+})
+
+//route to get all content (authenticated) of the user
+app.get("/api/v1/content", userMiddleware, async (req, res) => {
+    try{
+        //@ts-ignore
+        const userId = req.userId;
+        const content = await ContentModel.find({
+            userId: userId
+        }).populate("userId", "username")
+
+        res.json({
+            content
+        })
+    }catch(e) {
+        res.json({
+            message: "Content not available"
+        })
+    }
+
+})
+
+//route to delete content (authenticated)
+app.delete("/api/v1/content", userMiddleware, async(req, res) => {
+    try{
+        //@ts-ignore
+        const userId = req.userID;
+        const contentId = req.body.contentId;
+        await ContentModel.deleteMany({
+            contentId: contentId,
+            userId: userId
+        })
+
+        res.json({
+            message: "Content deleted"
+        })
+    }catch(e){
+        res.json({
+            message: "Error"
+        })
+    }
     
 })
 
-//route to get content
-app.get("/api/v1/content", (req, res) => {
-
-})
-
-//route to delete content
-app.delete("/api/v1/content", (req, res) => {
-    
-})
-
-//route to share user's second brain
+//route to share user's second brain (authenticated)
 app.post("/api/v1/brain/share", (req, res) => {
 
 })
 
-//route to share a link/particular content from second brain to someone else
+//route to share a link/particular content from second brain to someone else (authenticated)
 app.get("/api/v1/brain/:shareLink", (req, res) => {
 
 })
