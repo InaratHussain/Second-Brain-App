@@ -1,6 +1,8 @@
 import mongoose, {model, Schema} from 'mongoose';
-
-mongoose.connect()
+import dotenv from "dotenv";
+dotenv.config();
+const MONGODB_URL = process.env.MONGODB_URL as string;
+mongoose.connect(MONGODB_URL)
 
 const UserSchema = new Schema({
     username: {type: String, unique: true, required: true},
