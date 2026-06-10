@@ -1,10 +1,11 @@
 import express from "express";
-import { ContentModel, UserModel } from "./db.js";
+import { ContentModel, LinkModel, UserModel } from "./db.js";
 import jwt from 'jsonwebtoken';
 import { z } from "zod";
 import bcrypt from "bcrypt";
 import dotenv from "dotenv";
 import { userMiddleware } from "./middleware.js";
+import { random } from "./utils.js";
 
 dotenv.config();
 const JWT_SECRET = process.env.JWT_SECRET as string;
@@ -21,7 +22,7 @@ const signinSchema = z.object({
   password: z.string()
 });
 
-//route to signup
+//signup
 app.post("/api/v1/signup", async(req, res) => {
     //zod validation and hash the password
    
@@ -53,7 +54,7 @@ app.post("/api/v1/signup", async(req, res) => {
     }
 })
 
-//route to signin
+//signin
 app.post("/api/v1/signin", async (req, res) => {
     //use JWT
     try {
@@ -106,14 +107,14 @@ app.post("/api/v1/signin", async (req, res) => {
     
 })
 
-//route to post content on second brain (authenticated)
+//post content on second brain (authenticated)
 app.post("/api/v1/content", userMiddleware, async (req, res) => {
     try{
         const title = req.body.title;
         const link = req.body.link;
         //const tags = req.body.tags;
         //@ts-ignore
-        const userId = req.userId;
+        const userId = req.userId;   //provided by the middleware who will check the token
 
         await ContentModel.create({
             title,
@@ -133,7 +134,7 @@ app.post("/api/v1/content", userMiddleware, async (req, res) => {
     }
 })
 
-//route to get all content (authenticated) of the user
+//get all content of the user (authenticated) 
 app.get("/api/v1/content", userMiddleware, async (req, res) => {
     try{
         //@ts-ignore
@@ -153,7 +154,7 @@ app.get("/api/v1/content", userMiddleware, async (req, res) => {
 
 })
 
-//route to delete content (authenticated)
+//delete content (authenticated)
 app.delete("/api/v1/content", userMiddleware, async(req, res) => {
     try{
         //@ts-ignore
@@ -169,20 +170,105 @@ app.delete("/api/v1/content", userMiddleware, async(req, res) => {
         })
     }catch(e){
         res.json({
-            message: "Error"
+            message: "Error deleting"
         })
     }
     
 })
 
-//route to share user's second brain (authenticated)
-app.post("/api/v1/brain/share", (req, res) => {
+//share user's second brain (authenticated)
+app.post("/api/v1/brain/share", userMiddleware, async (req, res) => {
+    try{
+        const share = req.body.share;
+        const existingLink = await LinkModel.findOne({
+                //@ts-ignore
+                userId: req.userId
+            })
+        //enable or disable link sharing
+        if(share === true) {        
 
+            if(existingLink) {
+                res.json({
+                    shareLink: existingLink.hash
+                })
+                return;
+            }
+
+            //generate a sharable link if share is true only if link does not exist
+            const hash = random(10)
+            await LinkModel.create({
+                //@ts-ignore
+                userId: req.userId,
+                hash: hash
+            })
+            res.json({
+                message: "Created sharable link",
+                shareLink: hash
+            })
+        }
+        else {    //is share is false then disable the link (delete from db)
+            if(existingLink) {
+                await LinkModel.deleteOne({
+                //@ts-ignore
+                userId: req.userId
+                })
+                res.json({
+                    message: "Removed sharable link"
+                })
+            }
+            
+            else {
+                res.json({
+                    message: "Link does not exist"
+                })
+            }
+        }
+    } catch(e) {
+        res.json({
+            message: "Error sharing link"
+        })
+    }
 })
 
-//route to share a link/particular content from second brain to someone else (authenticated)
-app.get("/api/v1/brain/:shareLink", (req, res) => {
+//fetch another user's shared brain content
+app.get("/api/v1/brain/:shareLink", async (req, res) => {
+    try{
+        const hash = req.params.shareLink;
+        const link = await LinkModel.findOne({
+            hash: hash
+        })
+        if(!link) {
+            res.status(401).json({
+                message: "shareLink does not exist"
+            })
+            return;
+        }
 
+        //else we will get the user id from the existing link in db and use it to get all the user's content
+        const content = await ContentModel.find({
+            userId: link.userId
+        })
+
+        const user = await UserModel.findOne({
+            _id: link.userId
+        })
+
+        if(!user) {
+            res.status(411).json({
+                message: "This error should ideally not happen"
+            })
+            return;
+        }
+
+        res.json({
+            username: user.username,       //we do not use optional chaining if we are checking whether user exits or not
+            content: content
+        })
+    }catch(e) {
+        res.json({
+            message: "Error opening link"
+        })
+    }
 })
 
 app.listen(3000);
